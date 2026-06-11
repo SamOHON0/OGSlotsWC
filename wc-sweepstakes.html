@@ -334,7 +334,6 @@
   <div class="status">
     <div class="s-left"><span class="pulse" id="pulse"></span><span id="statusTxt">Loading live results&hellip;</span></div>
     <div style="display:flex;gap:8px">
-      <button class="btn ghost" id="manualBtn">Edit by hand</button>
       <button class="btn" id="refreshBtn">Refresh</button>
     </div>
   </div>
@@ -352,13 +351,12 @@
 
   <div class="lead" id="leaderboard"></div>
 
-  <div class="sec-h"><span>The Draw</span><span id="editHint" style="color:var(--clay);display:none">edit mode on</span></div>
-  <div class="sec-sub">Each entry holds three nations. A team's points come from the furthest stage it reaches. Updates pull automatically from the live feed; tap the cells in edit mode to override by hand.</div>
+  <div class="sec-h"><span>The Draw</span></div>
+  <div class="sec-sub">Each entry holds three nations. A team's points come from the furthest stage it reaches. Scores update automatically from the live feed.</div>
   <div id="players"></div>
 
   <div class="foot">
-    Live scores via ESPN &middot; auto-refreshes every 2 minutes during the tournament.<br>
-    If the feed drops, hit <b>Edit by hand</b> and tap the stages yourself.
+    Live scores via ESPN &middot; auto-refreshes every 2 minutes during the tournament.
     <details>
       <summary>How scoring works</summary>
       <p>A team collects the points for every stage it clears, added together. Reaching the Round of 32 is worth 1. If that same team goes on to the Last 16 it adds 2 more (3 total), and so on up to 21 for a tournament winner (1+2+3+4+5+6). Your entry's score is the sum across all three of your nations, so three teams that each go deep can beat one that wins it all.</p>
@@ -406,7 +404,6 @@ function flagImg(team,small){
 const reached = {};
 PLAYERS.forEach(p=>p.teams.forEach(t=>reached[t]=-1));
 
-let editMode = false;
 let knockoutKnown = false;   /* true once real teams appear in R32 fixtures */
 
 /* cumulative points for a peak stage index */
@@ -469,17 +466,10 @@ function renderPlayers(){
         ? (knockoutKnown ? '<span class="badge out">OUT</span>' : '<span class="badge grp">GROUPS</span>')
         : idx===5 ? '<span class="badge gold">WINNER 🏆</span>'
         : `<span class="badge">${STAGES[idx].label} · ${ptsFor(idx)}pt</span>`;
-      let cells='';
-      STAGES.forEach((s,si)=>{
-        const on = idx>=si;
-        const peak = idx===si;
-        const cls='stg'+(on?' on':'')+(peak?' peak':'')+(s.key==='W'?' win':'');
-        cells+=`<div class="${cls}" data-team="${t}" data-stage="${si}">${s.label}</div>`;
-      });
       teamsHtml+=`
         <div class="team">
           <div class="t-name">${flagImg(t)} ${t} ${badge}</div>
-          <div class="stages">${editMode?cells:stageReadout(idx)}</div>
+          <div class="stages">${stageReadout(idx)}</div>
         </div>`;
     });
     card.innerHTML=`
@@ -487,19 +477,9 @@ function renderPlayers(){
       <div class="teams">${teamsHtml}</div>`;
     wrap.appendChild(card);
   });
-
-  if(editMode){
-    document.querySelectorAll('.stg').forEach(c=>{
-      c.addEventListener('click',()=>{
-        const t=c.dataset.team, si=+c.dataset.stage;
-        reached[t] = (reached[t]===si) ? si-1 : si; // tap peak again to step down
-        render();
-      });
-    });
-  }
 }
 
-/* compact read-only stage display when not editing */
+/* read-only stage display */
 function stageReadout(idx){
   let out='';
   STAGES.forEach((s,si)=>{
@@ -576,7 +556,6 @@ function stageIdx(slug){
 function isThirdPlace(slug){return slug.includes('third')||slug.includes('3rd');}
 
 async function refresh(silent){
-  if(editMode) return; /* don't stomp manual overrides while editing */
   if(!silent){ setStatus('','Pulling live results…'); document.getElementById('refreshBtn').disabled=true; }
   try{
     const res=await fetch(API,{cache:'no-store'});
@@ -631,7 +610,7 @@ async function refresh(silent){
     setStatus('live',`Live · ESPN · updated ${stamp}${winnerName?' · 🏆 '+winnerName:''}`);
     scheduleNext();
   }catch(err){
-    setStatus('err','Feed unavailable — retrying soon, or Edit by hand');
+    setStatus('err','Feed unavailable — retrying shortly');
     console.warn('WC fetch failed:',err);
     scheduleNext();
   }finally{
@@ -644,28 +623,16 @@ function scheduleNext(){
   nextRefreshAt=Date.now()+REFRESH_MS;
 }
 function tickCountdown(){
-  if(editMode || nextRefreshAt===0) return;
-  const left=nextRefreshAt-Date.now();
-  if(left<=0){ refresh(true); return; }
+  if(nextRefreshAt===0) return;
+  if(nextRefreshAt-Date.now()<=0){ refresh(true); return; }
 }
 
 /* ---------- WIRE UP ---------- */
 document.getElementById('refreshBtn').addEventListener('click',()=>refresh(false));
-document.getElementById('manualBtn').addEventListener('click',()=>{
-  editMode=!editMode;
-  document.getElementById('manualBtn').textContent=editMode?'Done editing':'Edit by hand';
-  document.getElementById('editHint').style.display=editMode?'block':'none';
-  if(editMode){
-    setStatus('','Manual mode — auto-refresh paused. Tap a peak cell again to step down.');
-  }else{
-    refresh(false); /* leaving edit mode pulls fresh live data */
-  }
-  render();
-});
 
 /* re-pull when the tab becomes visible again (laptops waking from sleep) */
 document.addEventListener('visibilitychange',()=>{
-  if(!document.hidden && !editMode && Date.now()>=nextRefreshAt) refresh(true);
+  if(!document.hidden && Date.now()>=nextRefreshAt) refresh(true);
 });
 
 render();
